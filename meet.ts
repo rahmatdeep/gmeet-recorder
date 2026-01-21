@@ -10,7 +10,13 @@ async function run() {
     }
 
     const userDataDir = path.join(process.cwd(), 'user_data');
+    const recordingsDir = path.join(process.cwd(), 'recordings');
     console.log(`Using user data directory: ${userDataDir}`);
+
+    // Ensure recordings directory exists
+    if (!require('fs').existsSync(recordingsDir)) {
+        require('fs').mkdirSync(recordingsDir);
+    }
 
     // Launch persistent context
     const context = await chromium.launchPersistentContext(userDataDir, {
@@ -18,10 +24,14 @@ async function run() {
         permissions: ['microphone', 'camera'],
         args: [
             '--use-fake-ui-for-media-stream',
-            '--use-fake-device-for-media-stream',
-            '--disable-blink-features=AutomationControlled', // Help avoid bot detection
+            // removed --use-fake-device-for-media-stream to fix pulsating audio
+            '--disable-blink-features=AutomationControlled',
+            '--auto-select-tab-capture-source-by-title="Meet"',
+            '--enable-features=TabCapture,WebRTCPipeWireCapturer',
+            '--allow-http-screen-capture',
+            '--autoplay-policy=no-user-gesture-required',
         ],
-        ignoreDefaultArgs: ['--enable-automation'], // Help avoid bot detection
+        ignoreDefaultArgs: ['--enable-automation'],
         viewport: { width: 1280, height: 720 },
     });
 
@@ -35,7 +45,138 @@ async function run() {
     }
 
     console.log(`Navigating to ${meetUrl}...`);
+    // Pipe browser console logs to terminal
+    page.on('console', msg => console.log('BROWSER LOG:', msg.text()));
     await page.goto(meetUrl, { waitUntil: 'networkidle' });
+
+    // --- Merged Recording Setup (Audio + Video) ---
+    const recordingPath = path.join(recordingsDir, `meet-record-${Date.now()}.webm`);
+    const recordingStream = require('fs').createWriteStream(recordingPath);
+
+    await context.exposeFunction('saveRecordingChunk', (data: any) => {
+        // Playwright might send this as an object of {index: value}
+        // or a Buffer/Uint8Array depending on versions. We handle both.
+        const buffer = Buffer.isBuffer(data) ? data : Buffer.from(Object.values(data) as number[]);
+        recordingStream.write(buffer);
+        console.log(`Saved chunk. Current file size: ${require('fs').statSync(recordingPath).size} bytes`);
+    });
+
+    const startMergedRecording = async () => {
+        console.log('Attempting to start browser-side recording (Composite Mode)...');
+        await page.waitForTimeout(5000); // Wait for media to load
+
+        try {
+            console.log('Simulating user gesture for MediaRecorder...');
+            await page.click('body', { force: true });
+        } catch (e) { }
+
+        await page.evaluate(async () => {
+            console.log('Browser: Starting composite stream capture...');
+            try {
+                // 1. Get Video track from Tab Capture
+                // @ts-ignore
+                const displayStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: { displaySurface: 'browser' } as any,
+                    // @ts-ignore
+                    preferCurrentTab: true,
+                    audio: false // We will handle audio via WebAudio for robustness
+                });
+                const videoTrack = displayStream.getVideoTracks()[0];
+                if (!videoTrack) throw new Error('No video track');
+                console.log('Browser: Got video track:', videoTrack.label);
+
+                // 2. Setup AudioContext to capture page audio
+                const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+                console.log('Browser: AudioContext created. State:', audioCtx.state);
+
+                if (audioCtx.state === 'suspended') {
+                    await audioCtx.resume();
+                    console.log('Browser: AudioContext resumed. New State:', audioCtx.state);
+                }
+
+                const destination = audioCtx.createMediaStreamDestination();
+
+                const connectElements = () => {
+                    const videoElements = Array.from(document.querySelectorAll('video'));
+                    const audioElements = Array.from(document.querySelectorAll('audio'));
+                    const mediaElements = [...videoElements, ...audioElements];
+
+                    mediaElements.forEach(el => {
+                        // @ts-ignore
+                        if (el._connected) return;
+
+                        // Debug log element state
+                        // @ts-ignore
+                        console.log(`Browser: Found media element <${el.tagName}>. Muted: ${el.muted}, Volume: ${el.volume}, Paused: ${el.paused}, ReadyState: ${el.readyState}`);
+
+                        try {
+                            let source;
+                            // @ts-ignore
+                            if (el.srcObject) {
+                                console.log('Browser: Element has srcObject (WebRTC). Using createMediaStreamSource.');
+                                // @ts-ignore
+                                source = audioCtx.createMediaStreamSource(el.srcObject);
+                            } else {
+                                console.log('Browser: Element has src URL. Using createMediaElementSource.');
+                                source = audioCtx.createMediaElementSource(el);
+                            }
+
+                            // Connect to Destination (for recording) -> Hardware (for hearing)
+                            source.connect(destination); // To Recording
+                            source.connect(audioCtx.destination); // To Speaker
+
+                            // @ts-ignore
+                            el._connected = true;
+                            console.log('Browser: Connected audio from', el.tagName);
+                        } catch (e) {
+                            console.warn('Browser: Failed to connect source:', e);
+                        }
+                    });
+                };
+
+                connectElements();
+                const checkInterval = setInterval(connectElements, 5000);
+
+                // 3. Combine tracks into a new stream
+                // @ts-ignore
+                const compositeStream = new MediaStream([videoTrack]);
+                const audioTracks = destination.stream.getAudioTracks();
+                if (audioTracks[0]) {
+                    compositeStream.addTrack(audioTracks[0]);
+                    console.log('Browser: Added audio track to composite stream');
+                }
+
+                const mediaRecorder = new MediaRecorder(compositeStream, {
+                    mimeType: 'video/webm'
+                });
+
+                mediaRecorder.ondataavailable = async (e: BlobEvent) => {
+                    if (e.data.size > 0) {
+                        const buffer = await e.data.arrayBuffer();
+                        // @ts-ignore
+                        window.saveRecordingChunk(new Uint8Array(buffer));
+                    }
+                };
+
+                mediaRecorder.onstart = () => console.log('Browser: MediaRecorder started (Composite)');
+                mediaRecorder.onstop = () => {
+                    console.log('Browser: MediaRecorder stopped');
+                    clearInterval(checkInterval);
+                    audioCtx.close();
+                };
+
+                mediaRecorder.start(1000);
+
+                // Storage for cleanup
+                // @ts-ignore
+                window._mediaRecorder = mediaRecorder;
+                // @ts-ignore
+                window._recordingStream = compositeStream;
+            } catch (err) {
+                console.error('Browser: Failed composite recording:', err);
+            }
+        });
+    };
 
     // Check if we need to log in
     if (page.url().includes('accounts.google.com')) {
@@ -74,7 +215,32 @@ async function run() {
             } catch (e) { }
         }
 
-        // Second, check if we need to enter a name (if not logged in)
+        // Second, ensure mic and camera are off before joining
+        try {
+            const micButton = page.locator('[aria-label*="microphone"][aria-label*="off"], [aria-label*="microphone"][data-is-muted="false"]').first();
+            const camButton = page.locator('[aria-label*="camera"][aria-label*="off"], [aria-label*="camera"][data-is-muted="false"]').first();
+
+            // Note: Google Meet's labels can be tricky. Usually, if data-is-muted is "false", it's currently ON.
+            // We want to click it to turn it OFF.
+
+            // Check mic
+            const micLabel = await micButton.getAttribute('aria-label') || '';
+            if (micLabel.toLowerCase().includes('turn off') || micLabel.toLowerCase().includes('mute')) {
+                await micButton.click();
+                console.log('Muted microphone.');
+            }
+
+            // Check cam
+            const camLabel = await camButton.getAttribute('aria-label') || '';
+            if (camLabel.toLowerCase().includes('turn off') || camLabel.toLowerCase().includes('disable')) {
+                await camButton.click();
+                console.log('Disabled camera.');
+            }
+        } catch (e) {
+            // If they are already off, the "Turn off" selectors might not match.
+        }
+
+        // Third, check if we need to enter a name (if not logged in)
         try {
             const nameInput = page.locator('input[placeholder*="name"], input[aria-label*="name"]').first();
             if (await nameInput.isVisible({ timeout: 1000 })) {
@@ -121,18 +287,67 @@ async function run() {
 
     if (!joined) {
         console.log('Join button not found or already in meeting. Please join manually if not joined.');
+    } else {
+        await startMergedRecording();
+        console.log('Audio and Video recording initialized.');
     }
 
     console.log('Meeting script is running. Keep this window open.');
 
-    // Handle closure
-    page.on('close', () => {
-        console.log('Browser window closed.');
-        process.exit(0);
-    });
-
     // Keep active
-    await new Promise(() => { });
+    await new Promise((resolve) => {
+        const cleanup = async () => {
+            console.log('\nLeaving meeting and saving recordings...');
+
+            // Stop recording browser-side first
+            try {
+                await page.evaluate(() => {
+                    // @ts-ignore
+                    if (window._mediaRecorder && window._mediaRecorder.state !== 'inactive') {
+                        // @ts-ignore
+                        window._mediaRecorder.stop();
+                        console.log('Browser: MediaRecorder stopped via cleanup');
+                    }
+                    // @ts-ignore
+                    if (window._recordingStream) {
+                        // @ts-ignore
+                        window._recordingStream.getTracks().forEach(t => t.stop());
+                        console.log('Browser: Stream tracks stopped');
+                    }
+                });
+                // Wait for final chunks to be processed
+                await page.waitForTimeout(2000);
+            } catch (e) {
+                console.error('Error stopping browser recording:', e);
+            }
+
+            try {
+                // Try to click the "Leave call" button
+                const leaveButton = page.locator('button[aria-label="Leave call"], button:has-text("Leave call")').first();
+                if (await leaveButton.isVisible({ timeout: 2000 })) {
+                    await leaveButton.click();
+                    console.log('Clicked "Leave call" button.');
+                    // Give it a moment to send the 'leaving' signaling to Google servers
+                    await page.waitForTimeout(1000);
+                }
+            } catch (e) {
+                console.log('Could not find leave button, closing directly.');
+            }
+
+            recordingStream.end();
+            await context.close();
+            console.log('Browser closed and recordings saved.');
+            process.exit(0);
+        };
+
+        process.on('SIGINT', cleanup);
+        process.on('SIGTERM', cleanup);
+
+        page.on('close', () => {
+            console.log('Browser window closed.');
+            process.exit(0);
+        });
+    });
 }
 
 run().catch((err) => {
