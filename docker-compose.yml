@@ -1,0 +1,14 @@
+services:
+  recorder:
+    build: .
+    image: meet-record:latest
+    ipc: host # Important for Chrome memory sharing
+    shm_size: '2gb' # Prevent crashes due to shared memory issues
+    volumes:
+      - ./recordings:/app/recordings
+      - ./user_data:/app/user_data
+    environment:
+      - CI=true
+    # Default command, can be overridden
+    # Example: docker-compose run --rm recorder bun meet.ts <url> <name>
+    command: ["bun", "meet.ts"]

@@ -2,16 +2,19 @@ import { chromium, type BrowserContext } from 'playwright';
 import path from 'path';
 
 async function run() {
-    const meetUrl = process.argv[2];
-    const name = process.argv[3] || 'Assistant'; // Default name if none provided
-    if (!meetUrl) {
-        console.log('Usage: bun meet.ts <google-meet-url> [your-name]');
+    const args = process.argv.slice(2);
+    if (!args[0]) {
+        console.log('Usage: bun meet.ts <google-meet-url> [your-name] [--headless]');
         process.exit(1);
     }
+    const meetUrl = args[0];
+    const name = args.find(a => !a.startsWith('--') && a !== meetUrl) || 'Assistant';
+    const isHeadless = args.includes('--headless');
 
     const userDataDir = path.join(process.cwd(), 'user_data');
     const recordingsDir = path.join(process.cwd(), 'recordings');
     console.log(`Using user data directory: ${userDataDir}`);
+    if (isHeadless) console.log('Running in HEADLESS mode');
 
     // Ensure recordings directory exists
     if (!require('fs').existsSync(recordingsDir)) {
@@ -20,11 +23,10 @@ async function run() {
 
     // Launch persistent context
     const context = await chromium.launchPersistentContext(userDataDir, {
-        headless: false,
+        headless: isHeadless,
         permissions: ['microphone', 'camera'],
         args: [
             '--use-fake-ui-for-media-stream',
-            // removed --use-fake-device-for-media-stream to fix pulsating audio
             '--disable-blink-features=AutomationControlled',
             '--auto-select-tab-capture-source-by-title="Meet"',
             '--enable-features=TabCapture,WebRTCPipeWireCapturer',
