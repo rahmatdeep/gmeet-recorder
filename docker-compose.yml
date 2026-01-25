@@ -11,4 +11,4 @@ services:
       - CI=true
     # Default command, can be overridden
     # Example: docker-compose run --rm recorder bun meet.ts <url> <name>
-    command: ["bun", "meet.ts"]
+    command: [ "bun", "meet.ts" ]

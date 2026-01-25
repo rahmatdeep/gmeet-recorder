@@ -115,12 +115,23 @@ async function run() {
                             let source;
                             // @ts-ignore
                             if (el.srcObject) {
-                                console.log('Browser: Element has srcObject (WebRTC). Using createMediaStreamSource.');
+                                // Check if the stream actually has audio tracks
+                                // @ts-ignore
+                                const audioTracks = el.srcObject.getAudioTracks();
+                                if (audioTracks.length === 0) {
+                                    console.log('Browser: Element has srcObject but NO audio tracks. Skipping for now.');
+                                    return;
+                                }
+
+                                console.log('Browser: Element has srcObject with audio tracks. Using createMediaStreamSource.');
                                 // @ts-ignore
                                 source = audioCtx.createMediaStreamSource(el.srcObject);
-                            } else {
+                            } else if (el.src && el.src !== '') {
                                 console.log('Browser: Element has src URL. Using createMediaElementSource.');
                                 source = audioCtx.createMediaElementSource(el);
+                            } else {
+                                console.log('Browser: Element has no valid source yet. Skipping.');
+                                return;
                             }
 
                             // Connect to Destination (for recording) -> Hardware (for hearing)
@@ -129,7 +140,7 @@ async function run() {
 
                             // @ts-ignore
                             el._connected = true;
-                            console.log('Browser: Connected audio from', el.tagName);
+                            console.log('Browser: Successfully connected audio from', el.tagName);
                         } catch (e) {
                             console.warn('Browser: Failed to connect source:', e);
                         }
@@ -137,7 +148,7 @@ async function run() {
                 };
 
                 connectElements();
-                const checkInterval = setInterval(connectElements, 5000);
+                const checkInterval = setInterval(connectElements, 3000); // Check more frequently initially
 
                 // 3. Combine tracks into a new stream
                 // @ts-ignore
@@ -289,9 +300,33 @@ async function run() {
 
     if (!joined) {
         console.log('Join button not found or already in meeting. Please join manually if not joined.');
-    } else {
+    }
+
+    // Wait for the meeting to actually start (indicated by the presence of in-meeting UI markers)
+    console.log('Waiting for in-meeting UI to appear (Chat/People buttons) before starting recording...');
+    try {
+        // Wait for indicators that ONLY appear once INSIDE the meeting
+        const inMeetingSelectors = [
+            'button[aria-label="Chat with everyone"]',
+            'button[aria-label="Show everyone"]',
+            'button[aria-label="Meeting details"]'
+        ];
+
+        await Promise.any(inMeetingSelectors.map(s => page.waitForSelector(s, { timeout: 300000, state: 'visible' })));
+
+        // Additional check: The "Please wait until a meeting host brings you into the call" message should be gone
+        const askingMessage = page.locator('text="Please wait until a meeting host brings you into the call"');
+        if (await askingMessage.isVisible({ timeout: 2000 })) {
+            console.log('Bot is still in the "Asking to join" state. Waiting for admission...');
+            await askingMessage.waitFor({ state: 'hidden', timeout: 300000 });
+        }
+
+        console.log('Bot has been admitted to the meeting.');
+        await page.waitForTimeout(3000); // Small buffer for UI to fully load
         await startMergedRecording();
         console.log('Audio and Video recording initialized.');
+    } catch (e) {
+        console.error('Timed out waiting to join the meeting or in-meeting UI not found.');
     }
 
     console.log('Meeting script is running. Keep this window open.');
