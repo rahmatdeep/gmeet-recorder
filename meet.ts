@@ -134,9 +134,8 @@ async function run() {
                                 return;
                             }
 
-                            // Connect to Destination (for recording) -> Hardware (for hearing)
+                            // Connect to Destination (for recording)
                             source.connect(destination); // To Recording
-                            source.connect(audioCtx.destination); // To Speaker
 
                             // @ts-ignore
                             el._connected = true;
@@ -191,23 +190,8 @@ async function run() {
         });
     };
 
-    // Check if we need to log in
-    if (page.url().includes('accounts.google.com')) {
-        console.log('------------------------------------------------------------');
-        console.log('ACTION REQUIRED: Please sign in to your Google Account.');
-        console.log('Authentication will be saved for future runs.');
-        console.log('------------------------------------------------------------');
-
-        // Wait for navigation back to Google Meet after login
-        try {
-            await page.waitForURL(/meet.google.com/, { timeout: 0 });
-            console.log('Successfully returned to Google Meet.');
-        } catch (err) {
-            console.error('Wait for Meet URL failed or timed out.');
-        }
-    }
-
     console.log('Waiting for meeting room to be ready...');
+
 
     // Function to click join button if found
     const attemptJoin = async () => {
