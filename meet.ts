@@ -314,61 +314,155 @@ async function run() {
         console.error('Timed out waiting to join the meeting or in-meeting UI not found.');
     }
 
+    // --- Auto-Exit Logic ---
+    let aloneSince: number | null = null;
+    const EXIT_DELAY_MS = 15000;
+    const INITIAL_GRACE_PERIOD_MS = 10000; // 10s initial grace period
+    const startTime = Date.now();
+
+    const cleanup = async () => {
+        console.log('\nLeaving meeting and saving recordings...');
+        clearInterval(monitoringInterval);
+
+        // Stop recording browser-side first
+        try {
+            await page.evaluate(() => {
+                // @ts-ignore
+                if (window._mediaRecorder && window._mediaRecorder.state !== 'inactive') {
+                    // @ts-ignore
+                    window._mediaRecorder.stop();
+                    console.log('Browser: MediaRecorder stopped via cleanup');
+                }
+                // @ts-ignore
+                if (window._recordingStream) {
+                    // @ts-ignore
+                    window._recordingStream.getTracks().forEach(t => t.stop());
+                    console.log('Browser: Stream tracks stopped');
+                }
+            });
+            // Wait for final chunks to be processed
+            await page.waitForTimeout(2000);
+        } catch (e) {
+            console.error('Error stopping browser recording:', e);
+        }
+
+        try {
+            // Try to click the "Leave call" button
+            const leaveButton = page.locator('button[aria-label="Leave call"], button:has-text("Leave call")').first();
+            if (await leaveButton.isVisible({ timeout: 2000 })) {
+                await leaveButton.click();
+                console.log('Clicked "Leave call" button.');
+                // Give it a moment to send the 'leaving' signaling to Google servers
+                await page.waitForTimeout(1000);
+            }
+        } catch (e) {
+            console.log('Could not find leave button, closing directly.');
+        }
+
+        recordingStream.end();
+        await context.close();
+        console.log('Browser closed and recordings saved.');
+        process.exit(0);
+    };
+
+    const monitoringInterval = setInterval(async () => {
+        try {
+            // Use page.evaluate to run JS directly in the browser for more reliable DOM access
+            const result = await page.evaluate(() => {
+                const debugInfo: string[] = [];
+                let maxCount = 0;
+
+                // Strategy 1: Look for any button whose text is just a number
+                const allButtons = Array.from(document.querySelectorAll('button'));
+                for (const btn of allButtons) {
+                    const text = btn.textContent?.trim() || '';
+                    const ariaLabel = btn.getAttribute('aria-label') || '';
+
+                    // Check if button text is just a number (participant count)
+                    if (/^\d+$/.test(text)) {
+                        const c = parseInt(text, 10);
+                        if (c > maxCount) {
+                            maxCount = c;
+                            debugInfo.push(`BtnText: "${text}" -> ${c}`);
+                        }
+                    }
+
+                    // Check aria-label for patterns like "(N)" or "N participants"
+                    const labelMatch = ariaLabel.match(/\((\d+)\)/) || ariaLabel.match(/(\d+)\s+participant/i);
+                    if (labelMatch && labelMatch[1]) {
+                        const c = parseInt(labelMatch[1], 10);
+                        if (c > maxCount) {
+                            maxCount = c;
+                            debugInfo.push(`AriaLabel: "${ariaLabel}" -> ${c}`);
+                        }
+                    }
+                }
+
+                // Strategy 2: Count video tiles (each participant usually has a video tile)
+                const videoTiles = document.querySelectorAll('[data-participant-id], [data-requested-participant-id]');
+                if (videoTiles.length > 0) {
+                    debugInfo.push(`VideoTiles: ${videoTiles.length}`);
+                    if (videoTiles.length > maxCount) {
+                        maxCount = videoTiles.length;
+                    }
+                }
+
+                return { maxCount, debugInfo };
+            });
+
+            const { maxCount, debugInfo } = result;
+            const elapsed = Date.now() - startTime;
+            const inGrace = elapsed < INITIAL_GRACE_PERIOD_MS;
+
+            // Always log what we find for debugging
+            console.log(`[Monitor] maxCount=${maxCount}, inGrace=${inGrace}, elapsed=${Math.round(elapsed / 1000)}s, debugInfo=[${debugInfo.join('; ')}]`);
+
+            // During initial grace period, skip exit logic
+            if (inGrace) {
+                return;
+            }
+
+            if (maxCount > 0) {
+                if (maxCount <= 1) {
+                    if (aloneSince === null) {
+                        aloneSince = Date.now();
+                        console.log(`Bot is alone (maxCount: ${maxCount}). Starting 15s countdown...`);
+                    } else if (Date.now() - aloneSince >= EXIT_DELAY_MS) {
+                        console.log(`Still alone after 15s. Auto-exiting.`);
+                        await cleanup();
+                    }
+                } else {
+                    if (aloneSince !== null) {
+                        console.log(`Participants back (maxCount: ${maxCount}). Resetting timer.`);
+                        aloneSince = null;
+                    }
+                }
+            } else {
+                // If we found NO numeric indicator, reset timer to be safe (avoid false exits)
+                if (aloneSince !== null) {
+                    console.log("No participant count found. Resetting timer for safety.");
+                    aloneSince = null;
+                }
+            }
+        } catch (e) {
+            console.error('[Monitor] Error:', e);
+        }
+    }, 3000);
+
+
+    process.on('SIGINT', cleanup);
+    process.on('SIGTERM', cleanup);
+
+    page.on('close', () => {
+        console.log('Browser window closed.');
+        process.exit(0);
+    });
+
     console.log('Meeting script is running. Keep this window open.');
 
     // Keep active
-    await new Promise((resolve) => {
-        const cleanup = async () => {
-            console.log('\nLeaving meeting and saving recordings...');
-
-            // Stop recording browser-side first
-            try {
-                await page.evaluate(() => {
-                    // @ts-ignore
-                    if (window._mediaRecorder && window._mediaRecorder.state !== 'inactive') {
-                        // @ts-ignore
-                        window._mediaRecorder.stop();
-                        console.log('Browser: MediaRecorder stopped via cleanup');
-                    }
-                    // @ts-ignore
-                    if (window._recordingStream) {
-                        // @ts-ignore
-                        window._recordingStream.getTracks().forEach(t => t.stop());
-                        console.log('Browser: Stream tracks stopped');
-                    }
-                });
-                // Wait for final chunks to be processed
-                await page.waitForTimeout(2000);
-            } catch (e) {
-                console.error('Error stopping browser recording:', e);
-            }
-
-            try {
-                // Try to click the "Leave call" button
-                const leaveButton = page.locator('button[aria-label="Leave call"], button:has-text("Leave call")').first();
-                if (await leaveButton.isVisible({ timeout: 2000 })) {
-                    await leaveButton.click();
-                    console.log('Clicked "Leave call" button.');
-                    // Give it a moment to send the 'leaving' signaling to Google servers
-                    await page.waitForTimeout(1000);
-                }
-            } catch (e) {
-                console.log('Could not find leave button, closing directly.');
-            }
-
-            recordingStream.end();
-            await context.close();
-            console.log('Browser closed and recordings saved.');
-            process.exit(0);
-        };
-
-        process.on('SIGINT', cleanup);
-        process.on('SIGTERM', cleanup);
-
-        page.on('close', () => {
-            console.log('Browser window closed.');
-            process.exit(0);
-        });
+    await new Promise(() => {
+        // The promise never resolves; we exit via process.exit(0) in cleanup or page close
     });
 }
 
