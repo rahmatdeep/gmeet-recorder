@@ -8,7 +8,7 @@ async function run() {
         process.exit(1);
     }
     const meetUrl = args[0];
-    const name = args.find(a => !a.startsWith('--') && a !== meetUrl) || 'Assistant';
+    const name = args.find(a => !a.startsWith('--') && a !== meetUrl) || 'Shadow NoteTaker';
     const isHeadless = args.includes('--headless');
 
     const userDataDir = path.join(process.cwd(), 'user_data');
@@ -251,6 +251,8 @@ async function run() {
             // Log once if it fails but don't stop the loop
         }
 
+        // Find and click join button
+
         const selectors = [
             'span:has-text("Join now")',
             'span:has-text("Ask to join")',
@@ -306,7 +308,6 @@ async function run() {
         }
 
         console.log('Bot has been admitted to the meeting.');
-        await page.waitForTimeout(3000); // Small buffer for UI to fully load
         await startMergedRecording();
         console.log('Audio and Video recording initialized.');
     } catch (e) {
