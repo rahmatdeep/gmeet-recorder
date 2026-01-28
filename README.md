@@ -36,11 +36,23 @@ docker-compose run --rm recorder bun meet.ts "<MEET_URL>" "<YOUR_BOT_NAME>" <DUR
 *Replace `<MEET_URL>` with the Google Meet link, `<BOT_NAME>` with the name, and `<DURATION_MINS>` with the auto-exit time (e.g., 30).*
 
 ### 📂 Volumes
-- **`recordings/`**: All captured `.webm` files are saved here.
+- **`recordings/` (Host)**: All captured `.webm` files are saved here by default via `docker-compose`.
+- **`/app/recordings` (Container)**: The internal path where the bot saves recording chunks.
 
 ### ⚙️ Environment Variables
 - **`MAX_DURATION_MINUTES`**: The number of minutes before the bot automatically leaves the meeting. Default is `15`. (Note: Providing a duration as a positional argument will override this value).
 - **`CI=true`**: Ensures a headless, non-interactive browser experience.
+
+### 🚀 Direct Docker Usage
+If you prefer not to use `docker-compose` or want to pull the image directly from Docker Hub:
+```bash
+docker run --rm \
+  -v $(pwd)/recordings:/app/recordings \
+  --ipc=host --shm-size=2gb \
+  rahmatdeep/gmeet-recorder:latest \
+  bun meet.ts "<MEET_URL>" "<BOT_NAME>" <DURATION_MINS>
+```
+*Note: The `-v` flag ensures recordings are persisted to your current directory's `recordings/` folder.*
 
 ---
 
