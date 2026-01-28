@@ -4,11 +4,20 @@ import path from 'path';
 async function run() {
     const args = process.argv.slice(2);
     if (!args[0]) {
-        console.log('Usage: bun meet.ts <google-meet-url> [your-name] [--headless]');
+        console.log('Usage: bun meet.ts <google-meet-url> [your-name] [duration-mins] [--headless]');
         process.exit(1);
     }
     const meetUrl = args[0];
-    const name = args.find(a => !a.startsWith('--') && a !== meetUrl) || 'Shadow NoteTaker';
+    const name = args[1] && !args[1].startsWith('--') ? args[1] : 'Shadow NoteTaker';
+    const durationArg = args[2] && !args[2].startsWith('--') ? args[2] : null;
+
+    // Time-based auto-exit: Priority to Arg, then Environemnt, then null
+    const maxDurationMins = durationArg ? parseInt(durationArg, 10) : (process.env.MAX_DURATION_MINUTES ? parseInt(process.env.MAX_DURATION_MINUTES, 10) : null);
+
+    if (maxDurationMins) {
+        console.log(`Auto-exit timer set for ${maxDurationMins} minutes.`);
+    }
+
     const isHeadless = args.includes('--headless');
 
     const recordingsDir = path.join(process.cwd(), 'recordings');
@@ -320,6 +329,14 @@ async function run() {
     const EXIT_DELAY_MS = 15000;
     const INITIAL_GRACE_PERIOD_MS = 10000; // 10s initial grace period
     const startTime = Date.now();
+
+    // Set duration-based timeout if configured
+    if (maxDurationMins) {
+        setTimeout(async () => {
+            console.log(`\nTime limit of ${maxDurationMins} minutes reached. Auto-exiting...`);
+            await cleanup();
+        }, maxDurationMins * 60 * 1000);
+    }
 
     const cleanup = async () => {
         console.log('\nLeaving meeting and saving recordings...');

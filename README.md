@@ -16,44 +16,35 @@ docker-compose build
 ### 2. Run the Recorder
 To start recording a meeting, use the following command:
 ```bash
-docker-compose run --rm recorder bun meet.ts "<MEET_URL>" "<YOUR_BOT_NAME>"
+docker-compose run --rm recorder bun meet.ts "<MEET_URL>" "<YOUR_BOT_NAME>" <DURATION_MINS>
 ```
-*Replace `<MEET_URL>` with the Google Meet link and `<YOUR_NAME>` with the name the bot should use to join.*
+*Replace `<MEET_URL>` with the Google Meet link, `<BOT_NAME>` with the name, and `<DURATION_MINS>` with the auto-exit time (e.g., 30).*
 
 ### 📂 Volumes
 - **`recordings/`**: All captured `.webm` files are saved here.
-- **`user_data/`**: Stores browser profiles and session data (useful for staying logged in).
+
+### ⚙️ Environment Variables
+- **`MAX_DURATION_MINUTES`**: The number of minutes before the bot automatically leaves the meeting. Default is `15`. (Note: Providing a duration as a positional argument will override this value).
+- **`CI=true`**: Ensures a headless, non-interactive browser experience.
 
 ---
 
-## 💻 Local Usage
+## 🔐 Stateless Recording
+The bot is now completely **stateless**. It uses in-memory browser profiles for every run, which means:
+- No file locks (`SingletonLock`).
+- You can run multiple bots concurrently.
+- No login or "seeding" is required for most meetings.
 
-### Prerequisites
-- [Bun](https://bun.sh) installed.
-- Playwright browsers installed (`bunx playwright install`).
-
-### 1. Install Dependencies
+To run concurrently:
 ```bash
-bun install
+docker-compose run --rm recorder bun meet.ts <URL_1> "Bot 1"
+docker-compose run --rm recorder bun meet.ts <URL_2> "Bot 2"
 ```
 
-### 2. Run Locally
+To override the timeout (e.g., 30 minutes):
 ```bash
-bun meet.ts <google-meet-url> [your-name] [--headless]
+docker-compose run --rm recorder bun meet.ts <URL> "My Bot" 30
 ```
-
-#### Example:
-```bash
-bun meet.ts https://meet.google.com/abc-defg-hij "Recorder Bot"
-```
-
----
-
-## 🔐 Authentication
-If it's your first time running or if the session expired:
-1. Run **without** `--headless` (or use the persistent volumes in Docker).
-2. Complete the Google login manually in the browser window.
-3. The session will be saved in the `user_data` directory for future automated runs.
 
 ---
 

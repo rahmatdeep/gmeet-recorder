@@ -8,6 +8,7 @@ services:
       - ./recordings:/app/recordings
     environment:
       - CI=true
+      - MAX_DURATION_MINUTES=15 # Default: Auto-exit after 15 minutes
     # Default command, can be overridden
     # Example: docker-compose run --rm recorder bun meet.ts <url> <name>
     command: [ "bun", "meet.ts" ]
