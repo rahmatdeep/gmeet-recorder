@@ -6,7 +6,6 @@ services:
     shm_size: '2gb' # Prevent crashes due to shared memory issues
     volumes:
       - ./recordings:/app/recordings
-      - ./user_data:/app/user_data
     environment:
       - CI=true
     # Default command, can be overridden

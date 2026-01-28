@@ -11,9 +11,7 @@ async function run() {
     const name = args.find(a => !a.startsWith('--') && a !== meetUrl) || 'Shadow NoteTaker';
     const isHeadless = args.includes('--headless');
 
-    const userDataDir = path.join(process.cwd(), 'user_data');
     const recordingsDir = path.join(process.cwd(), 'recordings');
-    console.log(`Using user data directory: ${userDataDir}`);
     if (isHeadless) console.log('Running in HEADLESS mode');
 
     // Ensure recordings directory exists
@@ -21,10 +19,9 @@ async function run() {
         require('fs').mkdirSync(recordingsDir);
     }
 
-    // Launch persistent context
-    const context = await chromium.launchPersistentContext(userDataDir, {
+    // Launch browser and create a stateless context
+    const browser = await chromium.launch({
         headless: isHeadless,
-        permissions: ['microphone', 'camera'],
         args: [
             '--use-fake-ui-for-media-stream',
             '--disable-blink-features=AutomationControlled',
@@ -34,6 +31,10 @@ async function run() {
             '--autoplay-policy=no-user-gesture-required',
         ],
         ignoreDefaultArgs: ['--enable-automation'],
+    });
+
+    const context = await browser.newContext({
+        permissions: ['microphone', 'camera'],
         viewport: { width: 1280, height: 720 },
     });
 
@@ -361,6 +362,7 @@ async function run() {
 
         recordingStream.end();
         await context.close();
+        await browser.close();
         console.log('Browser closed and recordings saved.');
         process.exit(0);
     };
