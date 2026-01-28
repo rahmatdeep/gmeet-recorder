@@ -1,7 +1,7 @@
 services:
   recorder:
     build: .
-    image: meet-record:latest
+    image: rahmatdeep/gmeet-recorder:latest
     ipc: host # Important for Chrome memory sharing
     shm_size: '2gb' # Prevent crashes due to shared memory issues
     volumes:

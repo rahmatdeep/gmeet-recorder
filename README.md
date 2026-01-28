@@ -2,6 +2,8 @@
 
 A robust tool to record Google Meet sessions with audio and video using Playwright and Bun. Designed to run seamlessly either locally or in a containerized environment.
 
+[**View on Docker Hub 🐳**](https://hub.docker.com/r/rahmatdeep/gmeet-recorder)
+
 ---
 
 ## 🛠 Docker Setup (Recommended)
@@ -45,6 +47,33 @@ To override the timeout (e.g., 30 minutes):
 ```bash
 docker-compose run --rm recorder bun meet.ts <URL> "My Bot" 30
 ```
+
+
+---
+
+## 🤖 Programmatic Usage (Node.js)
+
+If you are building a larger system and want to spawn recording bots on demand, you can use the `dockerode` library:
+
+```javascript
+const Docker = require('dockerode');
+const docker = new Docker();
+
+async function startBot(meetUrl, botName, durationMins) {
+  const container = await docker.createContainer({
+    Image: 'rahmatdeep/gmeet-recorder:latest',
+    Cmd: ['bun', 'meet.ts', meetUrl, botName, durationMins.toString()],
+    HostConfig: {
+      ShmSize: 2 * 1024 * 1024 * 1024, // 2GB
+      Binds: [`${process.cwd()}/recordings:/app/recordings`],
+      AutoRemove: true 
+    }
+  });
+  await container.start();
+}
+```
+> [!IMPORTANT]  
+> Always ensure `ShmSize` is at least **2GB** to prevent browser crashes during recording.
 
 ---
 
