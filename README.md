@@ -8,7 +8,7 @@ A robust tool to record Google Meet sessions with audio and video using Playwrig
 
 ## ✨ Key Features
 
-- 🎥 **Integrated Recording**: Captures high-quality video and audio into a single `.webm` file using browser-side `MediaRecorder`.
+- 🎥 **Integrated Recording**: Captures high-quality video and audio into a single `.webm` file named after the meeting ID (e.g., `esq-rmab-zmo.webm`).
 - 🔐 **Stateless & Concurrent**: Uses in-memory profiles for every run, allowing multiple bots to record different meetings simultaneously without file locks.
 - 🤖 **Intelligent Auto-Join**: Automatically navigates the joining flow, mutes microphone & camera, and handles "Ask to join" or "Join now" buttons.
 - ⏱️ **Smart Auto-Exit**: Monitors participant counts and automatically leaves the meeting after a 15-second grace period when the bot is alone.
@@ -36,7 +36,7 @@ docker-compose run --rm recorder bun meet.ts "<MEET_URL>" "<YOUR_BOT_NAME>" <DUR
 *Replace `<MEET_URL>` with the Google Meet link, `<BOT_NAME>` with the name, and `<DURATION_MINS>` with the auto-exit time (e.g., 30).*
 
 ### 📂 Volumes
-- **`recordings/` (Host)**: All captured `.webm` files are saved here by default via `docker-compose`.
+- **`recordings/` (Host)**: All captured `.webm` files are saved here. Files are named after the meeting ID extracted from the URL.
 - **`/app/recordings` (Container)**: The internal path where the bot saves recording chunks.
 
 ### ⚙️ Environment Variables

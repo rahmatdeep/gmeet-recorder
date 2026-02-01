@@ -62,7 +62,8 @@ async function run() {
     await page.goto(meetUrl, { waitUntil: 'networkidle' });
 
     // --- Merged Recording Setup (Audio + Video) ---
-    const recordingPath = path.join(recordingsDir, `meet-record-${Date.now()}.webm`);
+    const meetingId = meetUrl.split('/').pop()?.split('?')[0] || 'recording';
+    const recordingPath = path.join(recordingsDir, `${meetingId}.webm`);
     const recordingStream = require('fs').createWriteStream(recordingPath);
 
     await context.exposeFunction('saveRecordingChunk', (data: any) => {
