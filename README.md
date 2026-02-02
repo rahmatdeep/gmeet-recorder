@@ -13,7 +13,7 @@ A robust tool to record Google Meet sessions with audio and video using Playwrig
 - 🤖 **Intelligent Auto-Join**: Automatically navigates the joining flow, mutes microphone & camera, and handles "Ask to join" or "Join now" buttons.
 - ⏱️ **Smart Auto-Exit**: Monitors participant counts and automatically leaves the meeting after a 15-second grace period when the bot is alone.
 - ⏳ **Customizable Duration**: Optional time limits to ensure the bot leaves after a specific duration if needed.
-- 🐳 **Docker Optimized**: Pre-built for containerized environments with necessary dependencies like Chromium, Xvfb, and Bun.
+- 🐳 **Docker Optimized**: Pre-built for containerized environments. Available for both **AMD64** (Intel/AMD) and **ARM64** (Apple Silicon/M-series) architectures.
 - ⚡ **Low Overhead**: Uses optimized browser flags and chunked recording to minimize resource usage during sessions.
 
 
