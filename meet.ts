@@ -387,6 +387,74 @@ async function run() {
 
     const monitoringInterval = setInterval(async () => {
         try {
+            // Check if bot has been kicked from the meeting
+            const isKicked = await page.evaluate(() => {
+                // Method 1: Check for "Return to home screen" button (appears when kicked)
+                const allButtons = Array.from(document.querySelectorAll('button'));
+                for (const btn of allButtons) {
+                    const btnText = btn.textContent?.toLowerCase() || '';
+                    if (btnText.includes('return to home screen')) {
+                        return { kicked: true, reason: 'Found "Return to home screen" button' };
+                    }
+                }
+
+                // Method 2: Check for "Returning to home screen" text (countdown message)
+                const allSpans = Array.from(document.querySelectorAll('span, div, h1, h2, p'));
+                for (const el of allSpans) {
+                    const text = el.textContent?.toLowerCase() || '';
+                    if (text.includes('returning to home screen')) {
+                        return { kicked: true, reason: 'Found "Returning to home screen" countdown' };
+                    }
+                    if (text.includes("you've been removed from the meeting") ||
+                        text.includes("you have been removed from the meeting")) {
+                        return { kicked: true, reason: 'Found removal message' };
+                    }
+                }
+
+                // Method 3: Check full page text for kick indicators
+                const pageText = document.body?.innerText || '';
+                const kickIndicators = [
+                    "You've been removed from the meeting",
+                    "You have been removed from the meeting",
+                    "You were removed from this meeting",
+                    "You've left the meeting",
+                    "The meeting has ended",
+                    "This meeting has ended",
+                    "You can't join this video call",
+                    "Meeting ended by host",
+                    "Return to home screen",
+                    "Returning to home screen"
+                ];
+
+                for (const indicator of kickIndicators) {
+                    if (pageText.toLowerCase().includes(indicator.toLowerCase())) {
+                        return { kicked: true, reason: indicator };
+                    }
+                }
+
+                // Method 4: Check for specific elements with removal-related attributes
+                const removedElements = document.querySelectorAll('[data-removed], [aria-label*="removed"], [aria-label*="ended"]');
+                if (removedElements.length > 0) {
+                    return { kicked: true, reason: 'Detected removal/ended UI element' };
+                }
+
+                return { kicked: false, reason: null };
+            });
+
+            // Check URL for indicators of being kicked/ended
+            const currentUrl = page.url();
+            const urlIndicatesEnd = currentUrl.includes('/bye') ||
+                currentUrl.includes('?uhb=') ||
+                !currentUrl.includes('meet.google.com');
+
+            if (isKicked.kicked || urlIndicatesEnd) {
+                const reason = isKicked.kicked ? isKicked.reason : 'URL indicates meeting ended';
+                console.log(`\n[Kick Detection] Bot was removed from meeting: ${reason}`);
+                console.log('Stopping recording and exiting...');
+                await cleanup();
+                return;
+            }
+
             // Use page.evaluate to run JS directly in the browser for more reliable DOM access
             const result = await page.evaluate(() => {
                 const debugInfo: string[] = [];
