@@ -9,6 +9,7 @@ A robust tool to record Google Meet sessions with audio and video using Playwrig
 ## ✨ Key Features
 
 - 🎥 **Integrated Recording**: Captures high-quality video and audio into a single `.webm` file named after the meeting ID (e.g., `esq-rmab-zmo.webm`).
+- 📝 **Custom Filenames**: Support for custom output filenames via the `--filename` flag.
 - 🔐 **Stateless & Concurrent**: Uses in-memory profiles for every run, allowing multiple bots to record different meetings simultaneously without file locks.
 - 🤖 **Intelligent Auto-Join**: Automatically navigates the joining flow, mutes microphone & camera, and handles "Ask to join" or "Join now" buttons.
 - ⏱️ **Smart Auto-Exit**: Monitors participant counts and automatically leaves the meeting after a 15-second grace period when the bot is alone.
@@ -32,7 +33,11 @@ docker-compose build
 ### 2. Run the Recorder
 To start recording a meeting, use the following command:
 ```bash
+# Basic usage
 docker-compose run --rm recorder bun meet.ts "<MEET_URL>" "<YOUR_BOT_NAME>" <DURATION_MINS>
+
+# With custom filename
+docker-compose run --rm recorder bun meet.ts "<MEET_URL>" "<YOUR_BOT_NAME>" <DURATION_MINS> --filename "my-meeting-recording"
 ```
 *Replace `<MEET_URL>` with the Google Meet link, `<BOT_NAME>` with the name, and `<DURATION_MINS>` with the auto-exit time (e.g., 30).*
 
@@ -51,7 +56,7 @@ docker run --rm \
   -v $(pwd)/recordings:/app/recordings \
   --ipc=host --shm-size=2gb \
   rahmatdeep/gmeet-recorder:latest \
-  bun meet.ts "<MEET_URL>" "<BOT_NAME>" <DURATION_MINS>
+  bun meet.ts "<MEET_URL>" "<BOT_NAME>" <DURATION_MINS> --filename "custom-name"
 ```
 *Note: The `-v` flag ensures recordings are persisted to your current directory's `recordings/` folder.*
 
@@ -74,7 +79,6 @@ To override the timeout (e.g., 30 minutes):
 docker-compose run --rm recorder bun meet.ts <URL> "My Bot" 30
 ```
 
-
 ---
 
 ## 🤖 Programmatic Usage (Node.js)
@@ -85,10 +89,16 @@ If you are building a larger system and want to spawn recording bots on demand, 
 const Docker = require('dockerode');
 const docker = new Docker();
 
-async function startBot(meetUrl, botName, durationMins) {
+async function startBot(meetUrl, botName, durationMins, filename) {
+  const cmd = ['bun', 'meet.ts', meetUrl, botName, durationMins.toString()];
+  
+  if (filename) {
+    cmd.push('--filename', filename);
+  }
+
   const container = await docker.createContainer({
     Image: 'rahmatdeep/gmeet-recorder:latest',
-    Cmd: ['bun', 'meet.ts', meetUrl, botName, durationMins.toString()],
+    Cmd: cmd,
     HostConfig: {
       ShmSize: 2 * 1024 * 1024 * 1024, // 2GB
       Binds: [`${process.cwd()}/recordings:/app/recordings`],

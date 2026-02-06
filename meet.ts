@@ -61,9 +61,36 @@ async function run() {
     page.on('console', msg => console.log('BROWSER LOG:', msg.text()));
     await page.goto(meetUrl, { waitUntil: 'networkidle' });
 
+    // Parse named arguments for filename
+    const filenameArg = args.find(arg => arg.startsWith('--filename=') || arg.startsWith('--filename'));
+    let customFilename = null;
+
+    if (filenameArg) {
+        if (filenameArg.includes('=')) {
+            customFilename = filenameArg.split('=')[1];
+        } else {
+            const index = args.indexOf(filenameArg);
+            const nextArg = args[index + 1];
+            if (nextArg && !nextArg.startsWith('--')) {
+                customFilename = nextArg;
+            }
+        }
+    }
+
     // --- Merged Recording Setup (Audio + Video) ---
-    const meetingId = meetUrl.split('/').pop()?.split('?')[0] || 'recording';
-    const recordingPath = path.join(recordingsDir, `${meetingId}.webm`);
+    const meetingId = (meetUrl.split('/').pop() || 'recording').split('?')[0];
+
+    let recordingName;
+    if (customFilename) {
+        recordingName = customFilename.endsWith('.webm') ? customFilename : `${customFilename}.webm`;
+    } else {
+        const now = new Date();
+        const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}-${String(now.getSeconds()).padStart(2, '0')}`;
+        recordingName = `${meetingId}_${timestamp}.webm`;
+    }
+
+    const recordingPath = path.join(recordingsDir, recordingName);
+    console.log(`Recording file will be saved to: ${recordingPath}`);
     const recordingStream = require('fs').createWriteStream(recordingPath);
 
     await context.exposeFunction('saveRecordingChunk', (data: any) => {
