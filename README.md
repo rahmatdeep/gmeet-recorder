@@ -17,6 +17,7 @@ A robust tool to record Google Meet sessions with audio and video using Playwrig
 - ⏳ **Customizable Duration**: Optional time limits to ensure the bot leaves after a specific duration if needed.
 - 🐳 **Docker Optimized**: Pre-built for containerized environments. Available for both **AMD64** (Intel/AMD) and **ARM64** (Apple Silicon/M-series) architectures.
 - ⚡ **Low Overhead**: Uses optimized browser flags and chunked recording to minimize resource usage during sessions.
+- 🔍 **Meeting ID Validation**: Automatically detects if a meeting ID is invalid before starting the recording, preventing empty files and saving resources.
 
 
 ---

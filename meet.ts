@@ -61,6 +61,35 @@ async function run() {
     page.on('console', msg => console.log('BROWSER LOG:', msg.text()));
     await page.goto(meetUrl, { waitUntil: 'networkidle' });
 
+    // Check for invalid meeting ID (with a small wait for SPA to render)
+    await page.waitForTimeout(2000);
+    const isInvalid = await page.evaluate(() => {
+        const text = document.body.innerText;
+        const pageTitle = document.title;
+        const hasErrorText = text.includes('Check your meeting code') ||
+            text.includes('Make sure you entered the correct meeting code') ||
+            text.includes('Check your meeting link') ||
+            text.includes('Invalid meeting code') ||
+            text.includes('Check your meeting code') ||
+            text.includes('Returning to home screen');
+
+        // Also check for the "Return to home screen" button which is unique to the error page
+        const hasReturnButton = Array.from(document.querySelectorAll('button, a')).some(el =>
+            el.textContent?.toLowerCase().includes('return to home screen')
+        );
+
+        return hasErrorText || hasReturnButton || pageTitle.includes('Error');
+    });
+
+    if (isInvalid) {
+        console.error('\nERROR: Invalid meeting ID. Please check the meeting code or URL.');
+        // Clean up any empty recording file if it was created accidentally
+        // (though in this version we check before creation)
+        await context.close();
+        await browser.close();
+        process.exit(1);
+    }
+
     // Parse named arguments for filename
     const filenameArg = args.find(arg => arg.startsWith('--filename=') || arg.startsWith('--filename'));
     let customFilename = null;
