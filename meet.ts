@@ -59,10 +59,18 @@ async function run() {
     console.log(`Navigating to ${meetUrl}...`);
     // Pipe browser console logs to terminal
     page.on('console', msg => console.log('BROWSER LOG:', msg.text()));
-    await page.goto(meetUrl, { waitUntil: 'networkidle' });
+    const response = await page.goto(meetUrl, { waitUntil: 'networkidle' });
 
-    // Check for invalid meeting ID (with a small wait for SPA to render)
-    await page.waitForTimeout(2000);
+    // Check for invalid meeting ID (HTTP 404 check)
+    if (response && response.status() === 404) {
+        console.error('\nERROR: Invalid meeting ID (404 Not Found).');
+        await context.close();
+        await browser.close();
+        process.exit(1);
+    }
+
+    // Check for invalid meeting ID (with a wait for SPA to render)
+    await page.waitForTimeout(5000);
     const isInvalid = await page.evaluate(() => {
         const text = document.body.innerText;
         const pageTitle = document.title;
