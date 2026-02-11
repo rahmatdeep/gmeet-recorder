@@ -59,7 +59,7 @@ async function run() {
     console.log(`Navigating to ${meetUrl}...`);
     // Pipe browser console logs to terminal
     page.on('console', msg => console.log('BROWSER LOG:', msg.text()));
-    const response = await page.goto(meetUrl, { waitUntil: 'networkidle' });
+    const response = await page.goto(meetUrl, { waitUntil: 'domcontentloaded' });
 
     // Check for invalid meeting ID (HTTP 404 check)
     if (response && response.status() === 404) {
@@ -373,7 +373,37 @@ async function run() {
             'button[aria-label="Meeting details"]'
         ];
 
-        await Promise.any(inMeetingSelectors.map(s => page.waitForSelector(s, { timeout: 300000, state: 'visible' })));
+        // Race: wait for in-meeting UI vs. declined entry detection
+        const inMeetingPromise = Promise.any(inMeetingSelectors.map(s => page.waitForSelector(s, { timeout: 300000, state: 'visible' })));
+
+        const declinedPromise = new Promise<never>((_, reject) => {
+            const checkDeclined = setInterval(async () => {
+                try {
+                    const isDeclined = await page.evaluate(() => {
+                        const pageText = document.body?.innerText || '';
+                        return pageText.toLowerCase().includes('denied your request to join');
+                    });
+                    if (isDeclined) {
+                        clearInterval(checkDeclined);
+                        reject(new Error('DECLINED'));
+                    }
+                } catch {
+                    // Page might be navigating, ignore
+                }
+            }, 2000);
+        });
+
+        try {
+            await Promise.race([inMeetingPromise, declinedPromise]);
+        } catch (e: any) {
+            if (e?.message === 'DECLINED') {
+                console.error('\nEntry declined: Someone in the call denied the bot\'s request to join.');
+                await context.close();
+                await browser.close();
+                process.exit(1);
+            }
+            throw e; // Re-throw other errors
+        }
 
         // Additional check: The "Please wait until a meeting host brings you into the call" message should be gone
         const askingMessage = page.locator('text="Please wait until a meeting host brings you into the call"');
